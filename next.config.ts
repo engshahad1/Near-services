@@ -1,7 +1,10 @@
-import type { NextConfig } from "next";
+// next.config.ts
+import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  distDir: 'build',          // بدّل .next إلى build
+  reactStrictMode: true,
+  // swcMinify: true,  ← احذف هذا السطر نهائي
 };
 
 export default nextConfig;

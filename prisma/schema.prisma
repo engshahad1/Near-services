@@ -1,0 +1,413 @@
+// ======================= Prisma Schema =======================
+// Docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+/**
+ * ======================= Enums =======================
+ */
+
+enum UserRole {
+  CUSTOMER
+  PROVIDER
+  ADMIN
+}
+
+enum ServiceType {
+  ON_SITE           // في الموقع
+  PICKUP_DELIVERY   // استلام وتوصيل
+}
+
+enum ProviderStatus {
+  PENDING
+  APPROVED
+  SUSPENDED
+  REJECTED
+}
+
+enum OrderStatus {
+  PENDING           // في الانتظار
+  CONFIRMED         // تم التأكيد
+  ASSIGNED          // تم التعيين
+  ON_WAY            // في الطريق
+  ARRIVED           // وصل
+  IN_PROGRESS       // جاري التنفيذ
+  COMPLETED         // مكتمل
+  CANCELLED         // ملغي
+  REFUNDED          // مسترد
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum DeliveryStatus {
+  PENDING
+  ASSIGNED
+  PICKUP_SCHEDULED
+  PICKED_UP
+  IN_TRANSIT
+  DELIVERED
+  FAILED
+}
+
+enum NotificationType {
+  ORDER_UPDATE
+  PAYMENT_SUCCESS
+  PAYMENT_FAILED
+  PROVIDER_ASSIGNED
+  SERVICE_COMPLETED
+  REVIEW_REQUEST
+  PROMOTION
+}
+
+enum CouponType {
+  PERCENTAGE
+  FIXED_AMOUNT
+}
+
+/**
+ * ======================= Models =======================
+ */
+
+// ---- User ----
+model User {
+  id        String   @id @default(cuid())
+  email     String?  @unique
+  phone     String   @unique
+  name      String
+  avatar    String?
+  role      UserRole @default(CUSTOMER)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // relations
+  orders    Order[]
+  addresses Address[]
+  reviews   Review[]
+  provider  Provider?
+
+  @@map("users")
+}
+
+// ---- Address ----
+model Address {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String   // المنزل، العمل، إلخ
+  address   String
+  building  String?
+  apartment String?
+  city      String   @default("الرياض")
+  district  String?
+  latitude  Float?
+  longitude Float?
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // relations
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orders Order[]
+
+  @@index([userId])
+  @@map("addresses")
+}
+
+// ---- Service ----
+model Service {
+  id              String      @id @default(cuid())
+  name            String
+  description     String?
+  price           Float       @default(0)
+  durationMinutes Int?
+  categoryId      String?
+  imageUrl        String?
+  type            ServiceType @default(ON_SITE)
+  isActive        Boolean     @default(true)
+  rating          Float       @default(0)
+  reviewCount     Int         @default(0)
+  metadata        Json?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  // relations
+  orders     Order[]
+  extras     ServiceExtra[]
+  providedBy ProviderService[]
+
+  @@index([categoryId])
+  @@map("services")
+}
+
+// ---- ServiceExtra ----
+model ServiceExtra {
+  id          String   @id @default(cuid())
+  serviceId   String
+  title       String
+  description String?
+  price       Float
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  service    Service     @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  orderItems OrderItem[]
+
+  @@index([serviceId])
+  @@map("service_extras")
+}
+
+// ---- Provider ----
+model Provider {
+  id        String  @id @default(cuid())
+  userId    String  @unique
+  name      String
+  email     String?
+  phone     String?
+  avatarUrl String?
+  bio       String?
+  location  String?
+
+  // إحصائيات/حالة
+  isVerified  Boolean        @default(false)
+  rating      Float          @default(0)
+  reviewCount Int            @default(0)
+  totalOrders Int            @default(0)
+  status      ProviderStatus @default(PENDING)
+  isActive    Boolean        @default(true)
+  metadata    Json?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  // من نموذجك السابق (اختياري)
+  businessName String?
+  description  String?
+
+  user     User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orders   Order[]
+  services ProviderService[]
+  reviews  Review[]
+
+  @@index([userId])
+  @@map("providers")
+}
+
+// ---- ProviderService (pivot) ----
+model ProviderService {
+  id         String   @id @default(cuid())
+  providerId String
+  serviceId  String
+  price      Float    @default(0)   // السعر المرتبط بالخدمة عند مزود معين
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  service  Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, serviceId])
+  @@index([providerId])
+  @@index([serviceId])
+  @@map("provider_services")
+}
+
+// ---- Order ----
+model Order {
+  id                  String        @id @default(cuid())
+  orderNumber         String        @unique
+  userId              String
+  serviceId           String
+  providerId          String?
+  addressId           String
+  scheduledAt         DateTime
+  totalAmount         Float
+  vat                 Float
+  finalAmount         Float
+  status              OrderStatus   @default(PENDING)
+  paymentStatus       PaymentStatus @default(PENDING)
+  paymentMethod       String
+  notes               String?
+  cancellationReason  String?
+  deliveryProvider    String?
+  deliveryTrackingUrl String?
+  deliveryDriverName  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user          User                 @relation(fields: [userId], references: [id])
+  service       Service              @relation(fields: [serviceId], references: [id])
+  provider      Provider?            @relation(fields: [providerId], references: [id])
+  address       Address              @relation(fields: [addressId], references: [id])
+  items         OrderItem[]
+  statusHistory OrderStatusHistory[]
+  payment       Payment?
+  review        Review?
+  delivery      Delivery?
+
+  @@index([userId])
+  @@index([providerId])
+  @@index([serviceId])
+  @@index([addressId])
+  @@map("orders")
+}
+
+// ---- OrderItem ----
+model OrderItem {
+  id         String   @id @default(cuid())
+  orderId    String
+  serviceId  String?
+  extraId    String?
+  quantity   Int      @default(1)
+  unitPrice  Float
+  totalPrice Float
+  createdAt  DateTime @default(now())
+
+  order        Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  serviceExtra ServiceExtra? @relation(fields: [extraId], references: [id])
+
+  @@index([orderId])
+  @@index([serviceId])
+  @@index([extraId])
+  @@map("order_items")
+}
+
+// ---- OrderStatusHistory ----
+model OrderStatusHistory {
+  id        String      @id @default(cuid())
+  orderId   String
+  status    OrderStatus
+  notes     String?
+  createdAt DateTime    @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@map("order_status_history")
+}
+
+// ---- Payment ----
+model Payment {
+  id              String        @id @default(cuid())
+  orderId         String        @unique
+  amount          Float
+  currency        String        @default("SAR")
+  paymentMethod   String
+  transactionId   String?
+  gatewayResponse Json?
+  status          PaymentStatus @default(PENDING)
+  paidAt          DateTime?
+  refundedAt      DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@map("payments")
+}
+
+// ---- Review ----
+model Review {
+  id         String   @id @default(cuid())
+  orderId    String   @unique
+  userId     String
+  providerId String
+  rating     Float
+  comment    String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  order    Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([providerId])
+  @@map("reviews")
+}
+
+// ---- DeliveryCompany ----
+model DeliveryCompany {
+  id          String   @id @default(cuid())
+  name        String
+  nameEn      String
+  apiEndpoint String
+  apiKey      String
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  deliveries Delivery[]
+
+  @@map("delivery_companies")
+}
+
+// ---- Delivery ----
+model Delivery {
+  id              String         @id @default(cuid())
+  orderId         String         @unique
+  companyId       String
+  externalId      String?
+  pickupAddress   String
+  deliveryAddress String
+  status          DeliveryStatus @default(PENDING)
+  trackingUrl     String?
+  estimatedTime   DateTime?
+  pickedUpAt      DateTime?
+  deliveredAt     DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  order   Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  company DeliveryCompany @relation(fields: [companyId], references: [id])
+
+  @@index([companyId])
+  @@map("deliveries")
+}
+
+// ---- Notification ----
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  title     String
+  message   String
+  type      NotificationType
+  data      Json?
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  @@index([userId])
+  @@map("notifications")
+}
+
+// ---- Coupon ----
+model Coupon {
+  id          String     @id @default(cuid())
+  code        String     @unique
+  description String?
+  type        CouponType
+  value       Float
+  minAmount   Float?
+  maxDiscount Float?
+  usageLimit  Int?
+  usedCount   Int        @default(0)
+  isActive    Boolean    @default(true)
+  validFrom   DateTime
+  validUntil  DateTime
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@index([isActive, validFrom, validUntil])
+  @@map("coupons")
+}
