@@ -21,6 +21,7 @@ export default function MerchantLogin() {
 
     try {
       setLoading(true);
+
       const res = await fetch("/api/merchant/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -31,19 +32,23 @@ export default function MerchantLogin() {
         }),
       });
 
-      const data = await res.json();
-      if (!res.ok || !data.ok) {
-        setErr(data?.error || "Login failed");
+      // نتعامل مع أي رد (JSON أو نص) ونظهر رسالة واضحة
+      const isJSON = res.headers.get("content-type")?.includes("application/json");
+      const payload = isJSON ? await res.json() : { ok: false, error: await res.text() };
+
+      if (!res.ok || !payload?.ok) {
+        setErr(payload?.error || `HTTP ${res.status}`);
         return;
       }
 
-      // حفظ session بسيطة في localStorage (ديمو)
-      localStorage.setItem("merchant_provider_id", data.data.providerId);
-      localStorage.setItem("merchant_provider_name", data.data.providerName);
-      // روح للوحة التاجر
+      // تخزين بيانات بسيطة (ديمو)
+      localStorage.setItem("merchant_provider_id", payload.data.providerId);
+      localStorage.setItem("merchant_provider_name", payload.data.providerName);
+
+      // الذهاب للوحة التاجر
       window.location.href = "/demo/merchant";
-    } catch (e: any) {
-      setErr("Network error");
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : "Network error");
     } finally {
       setLoading(false);
     }

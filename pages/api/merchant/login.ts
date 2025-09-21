@@ -1,51 +1,59 @@
 // pages/api/merchant/login.ts
 import type { NextApiRequest, NextApiResponse } from "next";
-import prisma from "../../../lib/prisma";
+import prisma from "../../../lib/prisma"; // من هذا الملف: pages/api/merchant/login.ts -> ../../../lib/prisma
+import { UserRole } from "@prisma/client";
 
-type Resp =
-  | { ok: true; data: { providerId: string; providerName: string } }
-  | { ok: false; error: string };
-
-export default async function handler(req: NextApiRequest, res: NextApiResponse<Resp>) {
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  // نسمح فقط بـ POST
   if (req.method !== "POST") {
-    res.setHeader("Allow", "POST");
     return res.status(405).json({ ok: false, error: "Method Not Allowed" });
   }
 
   try {
-    const { phone, providerName, ownerName } = req.body || {};
-    if (!phone || !providerName) {
-      return res.status(400).json({ ok: false, error: "phone & providerName required" });
+    const { ownerName, providerName, phone } = (req.body ?? {}) as {
+      ownerName?: string;
+      providerName?: string;
+      phone?: string;
+    };
+
+    if (!phone?.trim() || !providerName?.trim()) {
+      return res
+        .status(400)
+        .json({ ok: false, error: "phone & providerName required" });
     }
 
-    // upsert user by phone
+    const normPhone = phone.trim();
+    const owner = (ownerName || "Merchant Owner").trim();
+    const providerTitle = providerName.trim();
+
+    // 1) upsert user by unique phone
     const user = await prisma.user.upsert({
-      where: { phone },
-      update: { name: ownerName || "Merchant Owner" },
-      create: { phone, name: ownerName || "Merchant Owner", role: "PROVIDER" },
-      select: { id: true },
+      where: { phone: normPhone },
+      update: { name: owner, role: UserRole.PROVIDER, isActive: true },
+      create: { phone: normPhone, name: owner, role: UserRole.PROVIDER, isActive: true },
     });
 
-    // upsert provider by userId
+    // 2) upsert provider by userId
     const provider = await prisma.provider.upsert({
       where: { userId: user.id },
-      update: { name: providerName, isActive: true, status: "APPROVED" },
+      update: { name: providerTitle, phone: normPhone, isActive: true },
       create: {
         userId: user.id,
-        name: providerName,
+        name: providerTitle,
+        phone: normPhone,
         isActive: true,
-        status: "APPROVED",
       },
-      select: { id: true, name: true },
     });
 
     return res.status(200).json({
       ok: true,
       data: { providerId: provider.id, providerName: provider.name },
     });
-  } catch (e) {
-    console.error("merchant/login error", e);
-    return res.status(500).json({ ok: false, error: "Internal Server Error" });
+  } catch (err: any) {
+    // لسهولة التشخيص على Vercel
+    console.error("merchant/login error:", err);
+    return res
+      .status(500)
+      .json({ ok: false, error: err?.message || "Server error" });
   }
 }
-export const config = { runtime: "nodejs" };
