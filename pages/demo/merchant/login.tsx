@@ -1,56 +1,100 @@
-import { useState } from 'react';
-import { useRouter } from 'next/router';
+import { useState } from "react";
 
 export default function MerchantLogin() {
-  const r = useRouter();
-  const [name, setName] = useState('');
-  const [businessName, setBusinessName] = useState('');
-  const [phone, setPhone] = useState('');
+  const [ownerName, setOwnerName] = useState("");
+  const [providerName, setProviderName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
 
-  async function submit(e: React.FormEvent) {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setErr(null);
-    setLoading(true);
+    setErr("");
+
+    const p = phone.trim();
+    const prov = providerName.trim();
+
+    if (!p || !prov) {
+      setErr("phone & providerName required");
+      return;
+    }
+
     try {
-      const res = await fetch('/api/merchant/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, phone, businessName }),
+      setLoading(true);
+      const res = await fetch("/api/merchant/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ownerName: ownerName.trim() || "مالك المحل",
+          providerName: prov,
+          phone: p,
+        }),
       });
-      const json = await res.json();
-      if (!json.ok) throw new Error(json.error || 'failed');
-      const { provider } = json.data;
-      // نخزن هوية المزود محليًا للديمو
-      localStorage.setItem('demoProviderId', provider.id);
-      localStorage.setItem('demoProviderName', provider.businessName);
-      r.replace('/demo/merchant');
+
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        setErr(data?.error || "Login failed");
+        return;
+      }
+
+      // حفظ session بسيطة في localStorage (ديمو)
+      localStorage.setItem("merchant_provider_id", data.data.providerId);
+      localStorage.setItem("merchant_provider_name", data.data.providerName);
+      // روح للوحة التاجر
+      window.location.href = "/demo/merchant";
     } catch (e: any) {
-      setErr(e.message || 'خطأ غير متوقع');
+      setErr("Network error");
     } finally {
       setLoading(false);
     }
-  }
+  };
 
   return (
-    <div style={{minHeight:'100vh',display:'grid',placeItems:'center',background:'#0b1b2b'}}>
-      <form onSubmit={submit} style={{background:'#11263b',padding:24,borderRadius:12,width:420,maxWidth:'90%'}}>
-        <h1 style={{color:'#fff',marginBottom:16}}>تسجيل دخول المحل (Demo)</h1>
-        {err && <div style={{background:'#7f1d1d',color:'#fff',padding:8,borderRadius:8,marginBottom:12}}>{err}</div>}
-        <label style={{color:'#a7c0d8'}}>اسم المالك</label>
-        <input value={name} onChange={e=>setName(e.target.value)} required
-          style={{width:'100%',margin:'6px 0 12px',padding:10,borderRadius:8,border:'1px solid #274766',background:'#0f2236',color:'#fff'}}/>
-        <label style={{color:'#a7c0d8'}}>اسم المحل</label>
-        <input value={businessName} onChange={e=>setBusinessName(e.target.value)}
-          placeholder="اختياري" 
-          style={{width:'100%',margin:'6px 0 12px',padding:10,borderRadius:8,border:'1px solid #274766',background:'#0f2236',color:'#fff'}}/>
-        <label style={{color:'#a7c0d8'}}>جوال</label>
-        <input value={phone} onChange={e=>setPhone(e.target.value)} required
-          placeholder="05xxxxxxxx" 
-          style={{width:'100%',margin:'6px 0 16px',padding:10,borderRadius:8,border:'1px solid #274766',background:'#0f2236',color:'#fff'}}/>
-        <button disabled={loading} style={{width:'100%',padding:12,borderRadius:10,border:'none',background:'#2563eb',color:'#fff',fontWeight:700}}>
-          {loading ? 'جاري الدخول...' : 'دخول'}
+    <div className="min-h-screen flex items-center justify-center bg-[#0b1e3d] p-6">
+      <form
+        onSubmit={submit}
+        className="w-full max-w-md bg-[#0f2a56] rounded-2xl shadow-xl p-6 text-white"
+      >
+        <h1 className="text-center text-2xl font-extrabold mb-4">
+          تسجيل دخول المحل (Demo)
+        </h1>
+
+        {err ? (
+          <div className="bg-red-600/90 text-white rounded-md px-3 py-2 text-sm mb-4">
+            {err}
+          </div>
+        ) : null}
+
+        <label className="block mb-2">اسم المالك:</label>
+        <input
+          className="w-full mb-4 rounded-lg bg-white/10 px-3 py-2 outline-none"
+          value={ownerName}
+          onChange={(e) => setOwnerName(e.target.value)}
+          placeholder="مثال: Fahad Alanazi"
+        />
+
+        <label className="block mb-2">اسم المحل:</label>
+        <input
+          className="w-full mb-4 rounded-lg bg-white/10 px-3 py-2 outline-none"
+          value={providerName}
+          onChange={(e) => setProviderName(e.target.value)}
+          placeholder="مثال: Star Sisi"
+        />
+
+        <label className="block mb-2">جوال:</label>
+        <input
+          className="w-full mb-6 rounded-lg bg-white/10 px-3 py-2 outline-none"
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          placeholder="05xxxxxxxx"
+        />
+
+        <button
+          type="submit"
+          disabled={loading}
+          className="w-full bg-[#2563eb] hover:bg-[#1e4ed8] disabled:opacity-60 rounded-lg py-2 font-semibold"
+        >
+          {loading ? "جاري الدخول..." : "دخول"}
         </button>
       </form>
     </div>
